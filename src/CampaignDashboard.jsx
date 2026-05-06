@@ -130,7 +130,7 @@ const customTooltipStyle = { backgroundColor: '#0a1628', border: '1px solid #00F
 /* ─── Main Dashboard ─────────────────────────────────────────────── */
 export default function CampaignDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [campaignData, setCampaignData] = useState(SEED);
+  const [campaignData, setCampaignData] = useState(SEED); // SEED shown until user clears
   const [dateRange, setDateRange] = useState({ from: '', to: '' });
   const [filterPlatform, setFilterPlatform] = useState('all');
   const [csvInput, setCsvInput] = useState('');
@@ -145,8 +145,12 @@ export default function CampaignDashboard() {
   const [importLoading, setImportLoading] = useState(false);
   const [drillEntity, setDrillEntity] = useState(null); // { type: 'campaign'|'platform', name }
   const [drillMode, setDrillMode] = useState('campaign'); // 'campaign' | 'platform'
-  const [sheetUrl, setSheetUrl] = useState('');
+  const [sheetRawInput, setSheetRawInput] = useState('');
   const [sheetLoading, setSheetLoading] = useState(false);
+  const [sheetStatuses, setSheetStatuses] = useState([]);
+  const [showNuke, setShowNuke] = useState(false);
+  const [nukePassword, setNukePassword] = useState('');
+  const [nukeError, setNukeError] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
   const chatEndRef = useRef(null);
@@ -224,37 +228,67 @@ export default function CampaignDashboard() {
     setImportLoading(false);
   }, [campaignData]);
 
-  const handleSheetFetch = useCallback(async () => {
-    if (!sheetUrl.trim()) return;
-    setSheetLoading(true);
+  const fetchOneSheet = async (url) => {
+    const idMatch = url.match(/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+    const gidMatch = url.match(/[#&?]gid=([0-9]+)/);
+    if (!idMatch) return { ok: false, rows: [], msg: 'Invalid URL' };
+    const sheetId = idMatch[1];
+    const gid = gidMatch ? gidMatch[1] : '0';
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
     try {
-      // Extract sheet ID and gid from URL
-      const idMatch = sheetUrl.match(/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-      const gidMatch = sheetUrl.match(/[#&?]gid=([0-9]+)/);
-      if (!idMatch) { showToast('✗ Invalid Google Sheets URL'); setSheetLoading(false); return; }
-      const sheetId = idMatch[1];
-      const gid = gidMatch ? gidMatch[1] : '0';
-      const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
       const res = await fetch(csvUrl);
-      if (!res.ok) throw new Error('Could not fetch — make sure sheet is set to Anyone with link can view');
+      if (!res.ok) return { ok: false, rows: [], msg: `HTTP ${res.status} — check sharing settings` };
       const text = await res.text();
       const rows = parseCSVText(text);
-      if (rows.length === 0) throw new Error('No rows parsed — check column headers match');
-      const all = [...campaignData, ...rows];
-      try { await window.storage?.set('campaigns_v2', JSON.stringify(all)); } catch {}
-      setCampaignData(all);
-      showToast(`✓ ${rows.length} rows synced from Google Sheets`);
+      if (rows.length === 0) return { ok: false, rows: [], msg: 'No rows parsed — check headers' };
+      return { ok: true, rows, msg: `✓ ${rows.length} rows` };
     } catch (err) {
-      showToast(`✗ ${err.message}`);
+      return { ok: false, rows: [], msg: err.message };
+    }
+  };
+
+  const handleSyncAllSheets = useCallback(async () => {
+    const urls = sheetRawInput
+      .split(/[\s,]+/)
+      .map(u => u.trim())
+      .filter(u => u.startsWith('http'));
+    if (urls.length === 0) { showToast('✗ No valid URLs found — paste your sheet links'); return; }
+    setSheetLoading(true);
+    setSheetStatuses([]);
+    let combined = [...campaignData];
+    let totalRows = 0;
+    const statuses = [];
+    for (let i = 0; i < urls.length; i++) {
+      const result = await fetchOneSheet(urls[i]);
+      statuses[i] = { url: urls[i], ok: result.ok, msg: result.msg };
+      setSheetStatuses([...statuses]);
+      if (result.ok) {
+        combined = [...combined, ...result.rows];
+        totalRows += result.rows.length;
+      }
+    }
+    if (totalRows > 0) {
+      try { await window.storage?.set('campaigns_v2', JSON.stringify(combined)); } catch {}
+      setCampaignData(combined);
+      showToast(`✓ ${totalRows} rows synced from ${urls.length} sheet${urls.length > 1 ? 's' : ''}`);
+    } else {
+      showToast('✗ No rows imported — check URLs and sharing settings');
     }
     setSheetLoading(false);
-  }, [sheetUrl, campaignData]);
+  }, [sheetRawInput, campaignData]);
 
   const handleClearAll = useCallback(async () => {
-    setCampaignData(SEED);
-    try { await window.storage?.set('campaigns_v2', JSON.stringify(SEED)); } catch {}
-    showToast('✓ Cleared — restored sample data');
-  }, []);
+    if (nukePassword !== 'Evendeadiamthehero') {
+      setNukeError('Wrong password');
+      setTimeout(() => setNukeError(''), 2000);
+      return;
+    }
+    setCampaignData([]);
+    try { await window.storage?.set('campaigns_v2', JSON.stringify([])); } catch {}
+    setShowNuke(false);
+    setNukePassword('');
+    showToast('✓ All data deleted');
+  }, [nukePassword]);
 
   const filteredData = useMemo(() => campaignData.filter(r => {
     if (filterPlatform !== 'all' && r.Platform !== filterPlatform) return false;
@@ -457,6 +491,34 @@ export default function CampaignDashboard() {
           {activeTab === 'dashboard' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
+              {/* Hungry Edith empty state */}
+              {campaignData.length === 0 && (
+                <div style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  minHeight: '60vh', gap: 20, textAlign: 'center',
+                }}>
+                  <img src={CAT_GIF} alt="hungry edith" style={{ width: 260, imageRendering: 'pixelated' }} />
+                  <div>
+                    <div style={{ fontFamily: 'Syne', fontWeight: 800, fontSize: 28, color: '#fff', marginBottom: 8 }}>
+                      Edith is hungry 🍽️
+                    </div>
+                    <div style={{ fontFamily: 'Space Mono', fontSize: 12, color: '#4a7a9b', lineHeight: 1.8 }}>
+                      Feed Edith your data
+                    </div>
+                    <button onClick={() => setActiveTab('campaigns')} style={{
+                      marginTop: 20, padding: '12px 28px',
+                      background: 'linear-gradient(135deg,#FFD700,#CC9900)',
+                      border: 'none', borderRadius: 8, color: '#040b14',
+                      fontFamily: 'Syne', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+                    }}>
+                      🍖 Feed Edith
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {campaignData.length > 0 && <>
+
               {/* KPIs */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
                 <KPICard title="Impressions" value={kpis.impressions} unit="M" change={12.5} icon={Layers} color="#00F5FF" />
@@ -540,6 +602,7 @@ export default function CampaignDashboard() {
                   </div>
                 </ChartCard>
               </div>
+            </>}
             </div>
           )}
 
@@ -846,32 +909,70 @@ export default function CampaignDashboard() {
           {activeTab === 'campaigns' && (
             <div style={{ maxWidth: 820, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-              {/* Google Sheets Live Sync */}
+              {/* Google Sheets Multi-Sync */}
               <ChartCard title="🔗 Google Sheets Auto-Sync">
-                <p style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#4a7a9b', marginBottom: 6, lineHeight: 1.7 }}>
-                  Share your sheet → <span style={{ color: '#FFD700' }}>File → Share → Anyone with link → Viewer</span> → paste URL below
+                <p style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#4a7a9b', marginBottom: 4, lineHeight: 1.7 }}>
+                  Paste all your sheet URLs below — separated by spaces, commas, or new lines. Edith will detect and sync all of them.
                 </p>
-                <p style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#2a4a6b', marginBottom: 16, lineHeight: 1.6 }}>
-                  Sheet columns must match: <span style={{ color: '#00F5FF' }}>Date, Platform, Campaign_Name, Impressions, Clicks, Spend, Sessions</span>
+                <p style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#2a4a6b', marginBottom: 12, lineHeight: 1.6 }}>
+                  Each sheet must be shared → <span style={{ color: '#FFD700' }}>Anyone with link → Viewer</span> · Columns: <span style={{ color: '#00F5FF' }}>Date, Platform, Campaign_Name, Impressions, Clicks, Spend, Sessions</span>
                 </p>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <input value={sheetUrl} onChange={e => setSheetUrl(e.target.value)}
-                    placeholder="https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit..."
-                    style={{
-                      flex: 1, padding: '10px 14px', background: '#060f1e',
-                      border: '1px solid #FFD70033', borderRadius: 8, color: '#e2e8f0', fontSize: 11,
-                    }} />
-                  <button onClick={handleSheetFetch} disabled={sheetLoading} style={{
-                    padding: '10px 20px', background: sheetLoading ? '#0a1628' : 'linear-gradient(135deg,#FFD700,#CC9900)',
+
+                {/* Detected URL count pill */}
+                {(() => {
+                  const count = sheetRawInput.split(/[\s,]+/).filter(u => u.trim().startsWith('http')).length;
+                  return count > 0 ? (
+                    <div style={{ marginBottom: 10 }}>
+                      <span style={{ fontFamily: 'Space Mono', fontSize: 9, color: '#FFD700', background: '#FFD70018', border: '1px solid #FFD70033', borderRadius: 20, padding: '3px 10px' }}>
+                        {count} sheet{count !== 1 ? 's' : ''} detected
+                      </span>
+                    </div>
+                  ) : null;
+                })()}
+
+                <textarea
+                  value={sheetRawInput}
+                  onChange={e => { setSheetRawInput(e.target.value); setSheetStatuses([]); }}
+                  placeholder={`Paste all your Google Sheet links here, e.g.:\nhttps://docs.google.com/spreadsheets/d/ABC123/edit\nhttps://docs.google.com/spreadsheets/d/DEF456/edit\nhttps://docs.google.com/spreadsheets/d/GHI789/edit`}
+                  style={{
+                    width: '100%', height: 140, padding: 14,
+                    background: '#060f1e', border: '1px solid #FFD70022',
+                    borderRadius: 8, color: '#e2e8f0', resize: 'vertical', lineHeight: 1.7, fontSize: 11,
+                    fontFamily: 'Space Mono',
+                  }}
+                />
+
+                {/* Per-sheet status after sync */}
+                {sheetStatuses.length > 0 && (
+                  <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 160, overflowY: 'auto' }}>
+                    {sheetStatuses.map((s, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <span style={{ fontFamily: 'Space Mono', fontSize: 9, color: '#2a4a6b', flexShrink: 0 }}>{i + 1}</span>
+                        <span style={{ fontFamily: 'Space Mono', fontSize: 9, color: '#4a7a9b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {s.url.replace('https://docs.google.com/spreadsheets/d/', '').slice(0, 24)}…
+                        </span>
+                        <span style={{ fontFamily: 'Space Mono', fontSize: 9, color: s.ok ? '#39FF14' : '#FF2D78', flexShrink: 0 }}>{s.msg}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 10, marginTop: 14, alignItems: 'center' }}>
+                  <button onClick={handleSyncAllSheets} disabled={sheetLoading} style={{
+                    padding: '10px 24px', background: sheetLoading ? '#0a1628' : 'linear-gradient(135deg,#FFD700,#CC9900)',
                     border: 'none', borderRadius: 8, color: '#040b14',
                     fontFamily: 'Syne', fontWeight: 700, fontSize: 12, cursor: sheetLoading ? 'not-allowed' : 'pointer',
                     whiteSpace: 'nowrap',
                   }}>
-                    {sheetLoading ? '⏳ Fetching…' : '⚡ Sync Sheet'}
+                    {sheetLoading ? '⏳ Syncing…' : '⚡ Sync All Sheets'}
                   </button>
+                  <button onClick={() => { setSheetRawInput(''); setSheetStatuses([]); }} style={{
+                    padding: '10px 14px', background: 'transparent', border: '1px solid #2a4a6b',
+                    borderRadius: 8, color: '#4a7a9b', fontFamily: 'Space Mono', fontSize: 10, cursor: 'pointer',
+                  }}>Clear</button>
                 </div>
                 <p style={{ fontFamily: 'Space Mono', fontSize: 9, color: '#2a4a6b', marginTop: 10 }}>
-                  💡 Works for any tab — add <span style={{ color: '#FFD700' }}>#gid=SHEET_TAB_ID</span> to the URL to target a specific tab
+                  💡 To target a specific tab, add <span style={{ color: '#FFD700' }}>#gid=TAB_ID</span> to the URL
                 </p>
               </ChartCard>
 
@@ -925,11 +1026,7 @@ export default function CampaignDashboard() {
                     padding: '9px 16px', background: 'transparent', border: '1px solid #00F5FF22',
                     borderRadius: 8, color: '#4a7a9b', fontFamily: 'Syne', fontWeight: 600, fontSize: 12, cursor: 'pointer',
                   }}>Clear</button>
-                  <div style={{ flex: 1 }} />
-                  <button onClick={handleClearAll} style={{
-                    padding: '9px 16px', background: 'transparent', border: '1px solid #FF2D7844',
-                    borderRadius: 8, color: '#FF2D78', fontFamily: 'Space Mono', fontSize: 10, cursor: 'pointer',
-                  }}>🗑 Reset all data</button>
+
                 </div>
               </ChartCard>
 
@@ -962,6 +1059,58 @@ export default function CampaignDashboard() {
                   {filteredData.length > 20 && <p style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#4a7a9b', marginTop: 12 }}>+ {filteredData.length - 20} more rows</p>}
                 </div>
               </ChartCard>
+
+              {/* ── DANGER ZONE ── */}
+              <div style={{
+                background: 'linear-gradient(135deg,#1a0510 0%,#0d020a 100%)',
+                border: '1px solid #FF2D7833',
+                borderRadius: 12, padding: '24px',
+              }}>
+                <div style={{ fontFamily: 'Syne', fontWeight: 700, fontSize: 13, color: '#FF2D78', marginBottom: 8, letterSpacing: 1, textTransform: 'uppercase' }}>
+                  ⚠️ Danger Zone
+                </div>
+                <p style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#6b3040', marginBottom: 20, lineHeight: 1.7 }}>
+                  This will permanently delete ALL data — imported CSVs, synced sheets, everything. This cannot be undone.
+                </p>
+                {!showNuke ? (
+                  <button onClick={() => setShowNuke(true)} style={{
+                    padding: '11px 24px', background: 'transparent',
+                    border: '2px solid #FF2D7866', borderRadius: 8,
+                    color: '#FF2D78', fontFamily: 'Syne', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+                    transition: 'all .15s',
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.background = '#FF2D7818'; e.currentTarget.style.borderColor = '#FF2D78'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = '#FF2D7866'; }}
+                  >🗑 Delete All Data</button>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <p style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#FF2D78' }}>Enter password to confirm deletion:</p>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <input type="password" value={nukePassword} onChange={e => setNukePassword(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleClearAll()}
+                        placeholder="Password…"
+                        autoFocus
+                        style={{
+                          padding: '10px 14px', background: '#060f1e',
+                          border: `2px solid ${nukeError ? '#FF2D78' : '#FF2D7844'}`,
+                          borderRadius: 8, color: '#FF2D78', fontFamily: 'Space Mono', fontSize: 11, width: 200,
+                        }} />
+                      <button onClick={handleClearAll} style={{
+                        padding: '10px 18px', background: '#FF2D78',
+                        border: 'none', borderRadius: 8, color: '#fff',
+                        fontFamily: 'Syne', fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                      }}>Confirm Delete</button>
+                      <button onClick={() => { setShowNuke(false); setNukePassword(''); setNukeError(''); }} style={{
+                        padding: '10px 14px', background: 'transparent',
+                        border: '1px solid #2a4a6b', borderRadius: 8,
+                        color: '#4a7a9b', fontFamily: 'Space Mono', fontSize: 10, cursor: 'pointer',
+                      }}>Cancel</button>
+                    </div>
+                    {nukeError && <span style={{ fontFamily: 'Space Mono', fontSize: 10, color: '#FF2D78' }}>✗ {nukeError}</span>}
+                  </div>
+                )}
+              </div>
+
             </div>
           )}
 
