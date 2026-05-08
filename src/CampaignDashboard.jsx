@@ -330,6 +330,8 @@ export default function CampaignDashboard({ user, profile, onSignOut, onAdmin })
   const [aiMessages, setAiMessages]     = useState([{ role: 'assistant', text: "Hey — I'm Edith. Ask me anything about your campaigns, spend, CTR, platform performance, or trends." }]);
   const [aiQuery, setAiQuery]           = useState('');
   const [aiLoading, setAiLoading]       = useState(false);
+  const [aiModel, setAiModel]           = useState('claude-haiku-4-5-20251001');
+  const [aiMaxTokens, setAiMaxTokens]   = useState(600);
   const [sidebarOpen, setSidebarOpen]   = useState(true);
   const [appLoading, setAppLoading]     = useState(true);
   const [importProgress, setImportProgress] = useState(null); // null = not loading, else {pct,current,total,fileName,rows}
@@ -751,7 +753,7 @@ export default function CampaignDashboard({ user, profile, onSignOut, onAdmin })
     try {
       const res = await fetch('/api/chat', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ message: q, context: summary }),
+        body: JSON.stringify({ message: q, context: summary, model: aiModel, maxTokens: aiMaxTokens }),
       });
       const data = await res.json();
       setAiMessages(prev=>[...prev,{role:'assistant',text: data.reply || 'No response'}]);
@@ -1159,7 +1161,33 @@ export default function CampaignDashboard({ user, profile, onSignOut, onAdmin })
           {activeTab==='intel' && (
             <div className="tab-enter" style={{ maxWidth:740, display:'flex', flexDirection:'column', gap:16, height:'calc(100vh - 140px)' }}>
               <GCard glow="#7B61FF" style={{ flex:1, display:'flex', flexDirection:'column' }}>
-                <div style={{ fontFamily:'Space Mono', fontSize:9, color:'#7B61FF', letterSpacing:2, marginBottom:16 }}>EDITH — AI ANALYST</div>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10 }}>
+                  <div style={{ fontFamily:'Space Mono', fontSize:9, color:'#7B61FF', letterSpacing:2 }}>EDITH — AI ANALYST</div>
+                  <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+                    {/* Model selector */}
+                    <div style={{ display:'flex', gap:3 }}>
+                      {[
+                        { id:'claude-haiku-4-5-20251001', label:'Haiku', desc:'Fast · cheap' },
+                        { id:'claude-sonnet-4-6',          label:'Sonnet', desc:'Balanced' },
+                        { id:'claude-opus-4-6',            label:'Opus',   desc:'Most capable' },
+                      ].map(m => (
+                        <button key={m.id} onClick={() => setAiModel(m.id)} title={m.desc} style={{
+                          padding:'4px 11px', borderRadius:20, border:`1px solid ${aiModel===m.id ? '#7B61FF' : 'rgba(255,255,255,0.1)'}`,
+                          background: aiModel===m.id ? 'rgba(123,97,255,0.2)' : 'transparent',
+                          color: aiModel===m.id ? '#7B61FF' : 'rgba(255,255,255,0.3)',
+                          fontFamily:'Space Mono', fontSize:8, cursor:'pointer', transition:'all .15s',
+                        }}>{m.label}</button>
+                      ))}
+                    </div>
+                    {/* Token slider */}
+                    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      <span style={{ fontFamily:'Space Mono', fontSize:8, color:'rgba(255,255,255,0.25)' }}>tokens</span>
+                      <input type="range" min={200} max={4096} step={200} value={aiMaxTokens} onChange={e=>setAiMaxTokens(Number(e.target.value))}
+                        style={{ width:80, accentColor:'#7B61FF', cursor:'pointer' }}/>
+                      <span style={{ fontFamily:'Space Mono', fontSize:8, color:'#7B61FF', minWidth:32 }}>{aiMaxTokens}</span>
+                    </div>
+                  </div>
+                </div>
                 <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:12, marginBottom:16, paddingRight:4 }}>
                   {aiMessages.map((m,i)=>(
                     <div key={i} style={{ display:'flex', justifyContent:m.role==='user'?'flex-end':'flex-start' }}>
@@ -1183,9 +1211,12 @@ export default function CampaignDashboard({ user, profile, onSignOut, onAdmin })
                 </div>
                 <div style={{ display:'flex', gap:10 }}>
                   <input value={aiQuery} onChange={e=>setAiQuery(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleAskAI()} placeholder="Ask Edith about your campaigns…" style={{ flex:1, padding:'11px 16px', background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:10, color:'#e2e8f0', fontSize:12 }}/>
-                  <button onClick={handleAskAI} disabled={aiLoading} style={{ padding:'11px 18px', background:'linear-gradient(135deg,#7B61FF,#5040CC)', border:'none', borderRadius:10, cursor:'pointer', color:'#fff', display:'flex', alignItems:'center', gap:6, fontFamily:'Syne', fontWeight:700, fontSize:12 }}>
-                    <Send size={13}/> Send
+                  <button onClick={handleAskAI} disabled={aiLoading} style={{ padding:'11px 18px', background: aiLoading ? 'rgba(123,97,255,0.2)' : 'linear-gradient(135deg,#7B61FF,#5040CC)', border:'none', borderRadius:10, cursor: aiLoading ? 'not-allowed' : 'pointer', color:'#fff', display:'flex', alignItems:'center', gap:6, fontFamily:'Syne', fontWeight:700, fontSize:12 }}>
+                    <Send size={13}/> {aiLoading ? '…' : 'Send'}
                   </button>
+                  <div style={{ fontFamily:'Space Mono', fontSize:8, color:'rgba(255,255,255,0.18)', alignSelf:'center', whiteSpace:'nowrap' }}>
+                    {aiModel.includes('haiku') ? '⚡ Haiku' : aiModel.includes('sonnet') ? '🎵 Sonnet' : '🏆 Opus'} · {aiMaxTokens} tok
+                  </div>
                 </div>
               </GCard>
             </div>
