@@ -1312,33 +1312,65 @@ export default function CampaignDashboard({ user, profile, onSignOut, onAdmin })
           {activeTab==='intel' && (
             <div className="tab-enter" style={{ maxWidth:740, display:'flex', flexDirection:'column', gap:16, height:'calc(100vh - 140px)' }}>
               <GCard glow="#7B61FF" style={{ flex:1, display:'flex', flexDirection:'column' }}>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10 }}>
+                {/* Title row */}
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
                   <div style={{ fontFamily:'Space Mono', fontSize:9, color:'#7B61FF', letterSpacing:2 }}>EDITH — AI ANALYST</div>
-                  <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-                    {/* Model selector */}
-                    <div style={{ display:'flex', gap:3 }}>
-                      {[
-                        { id:'claude-haiku-4-5-20251001', label:'Haiku', desc:'Fast · cheap' },
-                        { id:'claude-sonnet-4-6',          label:'Sonnet', desc:'Balanced' },
-                        { id:'claude-opus-4-6',            label:'Opus',   desc:'Most capable' },
-                      ].map(m => (
-                        <button key={m.id} onClick={() => setAiModel(m.id)} title={m.desc} style={{
-                          padding:'4px 11px', borderRadius:20, border:`1px solid ${aiModel===m.id ? '#7B61FF' : 'rgba(255,255,255,0.1)'}`,
-                          background: aiModel===m.id ? 'rgba(123,97,255,0.2)' : 'transparent',
-                          color: aiModel===m.id ? '#7B61FF' : 'rgba(255,255,255,0.3)',
-                          fontFamily:'Space Mono', fontSize:8, cursor:'pointer', transition:'all .15s',
-                        }}>{m.label}</button>
-                      ))}
-                    </div>
-                    {/* Token slider */}
-                    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                      <span style={{ fontFamily:'Space Mono', fontSize:8, color:'rgba(255,255,255,0.25)' }}>tokens</span>
-                      <input type="range" min={200} max={4096} step={200} value={aiMaxTokens} onChange={e=>setAiMaxTokens(Number(e.target.value))}
-                        style={{ width:80, accentColor:'#7B61FF', cursor:'pointer' }}/>
-                      <span style={{ fontFamily:'Space Mono', fontSize:8, color:'#7B61FF', minWidth:32 }}>{aiMaxTokens}</span>
-                    </div>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <span style={{ fontFamily:'Space Mono', fontSize:8, color:'rgba(255,255,255,0.2)' }}>tokens</span>
+                    <input type="range" min={200} max={4096} step={200} value={aiMaxTokens} onChange={e=>setAiMaxTokens(Number(e.target.value))}
+                      style={{ width:70, accentColor:'#7B61FF', cursor:'pointer' }}/>
+                    <span style={{ fontFamily:'Space Mono', fontSize:8, color:'#7B61FF', minWidth:28 }}>{aiMaxTokens}</span>
                   </div>
                 </div>
+
+                {/* Provider + model selector */}
+                {(()=>{
+                  const PROVIDERS = [
+                    { name:'Claude',  color:'#00D4FF', models:[
+                      { id:'claude-haiku-4-5-20251001', label:'⚡ Haiku',    sub:'Fastest · cheapest' },
+                      { id:'claude-sonnet-4-6',          label:'🎵 Sonnet',  sub:'Best balance' },
+                      { id:'claude-opus-4-6',            label:'🏆 Opus',    sub:'Most powerful' },
+                    ]},
+                    { name:'ChatGPT', color:'#00A67E', models:[
+                      { id:'gpt-4o-mini', label:'⚡ GPT-4o mini', sub:'Fast · cheap' },
+                      { id:'gpt-4o',      label:'🧠 GPT-4o',      sub:'Smart' },
+                    ]},
+                    { name:'Gemini',  color:'#4285F4', models:[
+                      { id:'gemini-1.5-flash', label:'⚡ Flash', sub:'Fast' },
+                      { id:'gemini-1.5-pro',   label:'🧠 Pro',   sub:'Best' },
+                    ]},
+                  ];
+                  const activeProvider = PROVIDERS.find(p => p.models.some(m => m.id === aiModel)) || PROVIDERS[0];
+                  return (
+                    <div style={{ marginBottom:14, background:'rgba(255,255,255,0.02)', borderRadius:10, border:'1px solid rgba(255,255,255,0.06)', overflow:'hidden' }}>
+                      {/* Provider tabs */}
+                      <div style={{ display:'flex', borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
+                        {PROVIDERS.map(p => (
+                          <button key={p.name} onClick={() => setAiModel(p.models[0].id)} style={{
+                            flex:1, padding:'9px 0', border:'none', cursor:'pointer',
+                            background: activeProvider.name===p.name ? `${p.color}12` : 'transparent',
+                            borderBottom: activeProvider.name===p.name ? `2px solid ${p.color}` : '2px solid transparent',
+                            color: activeProvider.name===p.name ? p.color : 'rgba(255,255,255,0.3)',
+                            fontFamily:'Syne', fontWeight:700, fontSize:11, transition:'all .15s',
+                          }}>{p.name}</button>
+                        ))}
+                      </div>
+                      {/* Models for active provider */}
+                      <div style={{ display:'flex', gap:6, padding:'10px 10px' }}>
+                        {activeProvider.models.map(m => (
+                          <button key={m.id} onClick={() => setAiModel(m.id)} style={{
+                            flex:1, padding:'8px 10px', borderRadius:8, border:`1px solid ${aiModel===m.id ? activeProvider.color : 'rgba(255,255,255,0.07)'}`,
+                            background: aiModel===m.id ? `${activeProvider.color}18` : 'rgba(255,255,255,0.02)',
+                            cursor:'pointer', transition:'all .15s', textAlign:'left',
+                          }}>
+                            <div style={{ fontFamily:'Syne', fontWeight:700, fontSize:10, color: aiModel===m.id ? activeProvider.color : 'rgba(255,255,255,0.45)', whiteSpace:'nowrap' }}>{m.label}</div>
+                            <div style={{ fontFamily:'Space Mono', fontSize:7, color:'rgba(255,255,255,0.2)', marginTop:2 }}>{m.sub}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:12, marginBottom:16, paddingRight:4 }}>
                   {aiMessages.map((m,i)=>(
                     <div key={i} style={{ display:'flex', justifyContent:m.role==='user'?'flex-end':'flex-start' }}>
@@ -1349,7 +1381,15 @@ export default function CampaignDashboard({ user, profile, onSignOut, onAdmin })
                         {m.role==='assistant' && (
                           <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:6}}>
                             <span style={{fontSize:8,color:'#7B61FF',letterSpacing:2}}>EDITH</span>
-                            {m.model && <span style={{fontSize:7,color:'rgba(255,255,255,0.2)',background:'rgba(255,255,255,0.05)',padding:'1px 6px',borderRadius:4}}>{m.model.includes('haiku')?'⚡ Haiku':m.model.includes('sonnet')?'🎵 Sonnet':'🏆 Opus'}</span>}
+                            {m.model && <span style={{fontSize:7,color:'rgba(255,255,255,0.2)',background:'rgba(255,255,255,0.05)',padding:'1px 6px',borderRadius:4}}>{
+                              m.model.includes('haiku') ? '⚡ Haiku' :
+                              m.model.includes('sonnet') ? '🎵 Sonnet' :
+                              m.model.includes('opus') ? '🏆 Opus' :
+                              m.model.includes('gpt-4o-mini') ? '⚡ GPT-4o mini' :
+                              m.model.includes('gpt-4o') ? '🧠 GPT-4o' :
+                              m.model.includes('flash') ? '⚡ Gemini Flash' :
+                              m.model.includes('pro') ? '🧠 Gemini Pro' : m.model
+                            }</span>}
                           </div>
                         )}
                         {m.text}
@@ -1373,8 +1413,8 @@ export default function CampaignDashboard({ user, profile, onSignOut, onAdmin })
                   <button onClick={handleAskAI} disabled={aiLoading} style={{ padding:'11px 18px', background: aiLoading ? 'rgba(123,97,255,0.2)' : 'linear-gradient(135deg,#7B61FF,#5040CC)', border:'none', borderRadius:10, cursor: aiLoading ? 'not-allowed' : 'pointer', color:'#fff', display:'flex', alignItems:'center', gap:6, fontFamily:'Syne', fontWeight:700, fontSize:12 }}>
                     <Send size={13}/> {aiLoading ? '…' : 'Send'}
                   </button>
-                  <div style={{ fontFamily:'Space Mono', fontSize:8, color:'rgba(255,255,255,0.18)', alignSelf:'center', whiteSpace:'nowrap' }}>
-                    {aiModel.includes('haiku') ? '⚡ Haiku' : aiModel.includes('sonnet') ? '🎵 Sonnet' : '🏆 Opus'} · {aiMaxTokens} tok
+                  <div style={{ fontFamily:'Space Mono', fontSize:8, color:'rgba(255,255,255,0.2)', alignSelf:'center', whiteSpace:'nowrap' }}>
+                    {aiModel.includes('claude') ? '🤖' : aiModel.includes('gpt') ? '🟢' : '🔵'} {aiModel.split('-').slice(0,2).join('-')} · {aiMaxTokens}t
                   </div>
                 </div>
               </GCard>
